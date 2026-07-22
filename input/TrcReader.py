@@ -1,4 +1,5 @@
 from readTrc import Trc
+from tqdm import tqdm
 
 import os
 import glob
@@ -36,4 +37,4 @@ class TraceReader:
             df = pd.concat([df, pd.DataFrame(data={'index': i, 'time': [list(time)],
                                             'voltage': [list(voltage)],'chn':  int(self.chn)})])
         df.set_index('index', inplace=True)
-        return df
+        return df, info
