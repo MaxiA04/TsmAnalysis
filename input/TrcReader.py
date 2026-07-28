@@ -1,9 +1,12 @@
 from readTrc import Trc
 from tqdm import tqdm
 
+
 import os
 import glob
 import pandas as pd
+import datetime as dt
+import numpy as np
 
 class TraceReader:
 
@@ -26,15 +29,33 @@ class TraceReader:
         traces_unordered.sort()
         self.traces = traces_unordered
 
-    def load_traces(self):
+    def load_traces(self, fetch_timing_info=False):
 
-        df = pd.DataFrame(columns = ['index', 'time', 'voltage', 'chn'])
+        df = pd.DataFrame(columns = ['index', 'time', 'voltage', 'chn', 'trigger_timing'])
 
         loader = Trc()
+        
+        if fetch_timing_info:
 
-        for i in tqdm(range(len(self.traces))):            
-            time, voltage, info = loader.open(self.traces[i])
-            df = pd.concat([df, pd.DataFrame(data={'index': i, 'time': [list(time)],
-                                            'voltage': [list(voltage)],'chn':  int(self.chn)})])
+            for i in tqdm(range(len(self.traces))):  
+
+                time, voltage, info = loader.open(self.traces[i])
+                
+                timing = info['TRIGGER_TIME']
+
+                df = pd.concat([df, pd.DataFrame(data={'index': i, 'time': [list(time)],
+                                                        'voltage': [list(voltage)],'chn':  int(self.chn), 'trigger_timing': timing})])
+
+        else:
+
+            for i in tqdm(range(len(self.traces))):            
+                time, voltage, info = loader.open(self.traces[i])
+
+                timing = np.nan
+
+                df = pd.concat([df, pd.DataFrame(data={'index': i, 'time': [list(time)],
+                                                'voltage': [list(voltage)],'chn':  int(self.chn), 'trigger_timing': timing})])
+        
         df.set_index('index', inplace=True)
+
         return df, info
