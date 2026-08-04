@@ -44,11 +44,12 @@ class TsmAnalysis:
 
         df = pd.DataFrame()
         df['time'] = df_sig_in['time']
-        df['voltage'] = df_sig_in['voltage']
+        # df['voltage'] = df_sig_in['voltage']
         df['trigger_timing'] = df_sig_in['trigger_timing']
-        df['bsl'] = df_sig_in['voltage'].apply(lambda v: np.median(v[bsl_window[0]:bsl_window[1]]))
+        # df['bsl'] = df_sig_in['voltage'].apply(lambda v: np.median(v[bsl_window[0]:bsl_window[1]]))
         df['rms'] = df_sig_in['voltage'].apply(lambda v: np.sqrt(np.mean(np.square(v[:len(v)//3]))))
-        df['pmt'] = df.apply(lambda v: list(np.array(v.voltage) - v.bsl), axis=1)
+        # df['pmt'] = df.apply(lambda v: list(np.array(v.voltage) - v.bsl), axis=1)
+        df['pmt'] = df_sig_in['voltage']
         df['amp'] = df['pmt'].apply(lambda v: np.min(v))
         df['min_loc'] = df['pmt'].apply(lambda v: np.where(v == np.min(v))[0][0])
         df['ref'] = df_ref_in['voltage']
