@@ -2,10 +2,11 @@ import pandas as pd
 import numpy as np
 
 from tqdm import tqdm
+from scipy.optimize import curve_fit
 
 import warnings
 
-from scipy.optimize import curve_fit
+
 
     
 class TsmAnalysis:
@@ -32,6 +33,7 @@ class TsmAnalysis:
         self.df_rf_out = df_rf_out
         self.df = self.compute(df_pmt_out, df_rf_out, bsl_window)
         self.bsl_window = bsl_window
+
     @staticmethod
     def compute(df_sig_in, df_ref_in, bsl_window):
         """
@@ -43,17 +45,15 @@ class TsmAnalysis:
         """
 
         df = pd.DataFrame()
+        # Trace and trigger timing information
         df['time'] = df_sig_in['time']
-        # df['voltage'] = df_sig_in['voltage']
         df['trigger_timing'] = df_sig_in['trigger_timing']
-        # df['bsl'] = df_sig_in['voltage'].apply(lambda v: np.median(v[bsl_window[0]:bsl_window[1]]))
-        df['rms'] = df_sig_in['voltage'].apply(lambda v: np.sqrt(np.mean(np.square(v[:len(v)//3]))))
-        # df['pmt'] = df.apply(lambda v: list(np.array(v.voltage) - v.bsl), axis=1)
+
+        # PMT trace & calculations 
         df['pmt'] = df_sig_in['voltage']
         df['amp'] = df['pmt'].apply(lambda v: np.min(v))
-        df['min_loc'] = df['pmt'].apply(lambda v: np.where(v == np.min(v))[0][0])
-        df['ref'] = df_ref_in['voltage']
         df['area'] = df['pmt'].apply(lambda v: np.sum(-np.array(v)[bsl_window[1]:]) )
+        df['min_loc'] = df['pmt'].apply(lambda v: np.where(v == np.min(v))[0][0])
 
         pulse_start = []
         for i in tqdm(df.index):
@@ -62,7 +62,16 @@ class TsmAnalysis:
             pulse_start.append(time_zero)
 
         df['pulse_start'] = pulse_start
-               
+
+        # RF Trace
+        df['ref'] = df_ref_in['voltage']
+
+        # Deprecated calculations
+        # df['voltage'] = df_sig_in['voltage']
+        # df['bsl'] = df_sig_in['voltage'].apply(lambda v: np.median(v[bsl_window[0]:bsl_window[1]]))
+        # df['rms'] = df_sig_in['voltage'].apply(lambda v: np.sqrt(np.mean(np.square(v[:len(v)//3]))))
+        # df['pmt'] = df.apply(lambda v: list(np.array(v.voltage) - v.bsl), axis=1)
+
         return df
     
     def rf_model(self, t, A, B, w, phi):
