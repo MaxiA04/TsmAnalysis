@@ -296,7 +296,7 @@ class TsmAnalysis:
             corrected_time.append(correct)
             delay.append(pulse_delay)
             risetime.append(rt)
-        print('No corresction applied in %i cases' %fail_counts )
+        print('No correcction applied in %i cases' %fail_counts )
         self.df['CFD_corrected_time'] = corrected_time
         self.df['pulse_delay'] = delay
         self.df['rise_time'] = risetime
