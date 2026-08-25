@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
+import os
 
 from matplotlib import cm
 
@@ -21,7 +22,7 @@ class TsmPlotter():
             "Run TsmAnalysis(your_df).ref_timing() to ensure proper functionality of all methods in TsmPlotter.")
         pass
 
-    def tsm_hist2d(self, bins=(100, 100), range=None, offset=None, save_fig=False, fn=None, tick_step = 1e-9):
+    def tsm_hist2d(self, bins=(100, 100), range=None, offset=None, save_fig=False, fig_path=None, fn=None, tick_step = 1e-9):
         """
         TODO Write the docs
         """
@@ -75,9 +76,6 @@ class TsmPlotter():
         plt.ylabel('Pulse Amplitude [V]')
 
         if save_fig:
-            try:
-                plt.savefig(fn)
-            except:
-                print('No save path provided. The figure could not be saved.')
+            plt.savefig(os.path.join(fig_path, fn))
         
         plt.show()
