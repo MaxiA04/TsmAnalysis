@@ -12,7 +12,7 @@ class TsmPlotter():
         TODO Write the docs
 
         arguments:
-            offset: float in (0,1] to shift xaxis, in case distribution of interest sits at the edge of the RF-Period
+            offset: float in (0,1) to shift xaxis, in case distribution of interest sits at the edge of the RF-Period
             df_results: Pandas DataFrame containing timing information computed with TsmAnalysis.ref_timing method.
         """
 
@@ -22,14 +22,15 @@ class TsmPlotter():
             "Run TsmAnalysis(your_df).ref_timing() to ensure proper functionality of all methods in TsmPlotter.")
         pass
 
-    def tsm_hist2d(self, bins=(100, 100), range=None, offset=None, save_fig=False, fig_path=None, fn=None, tick_step = 1e-9):
+    def tsm_hist2d(self, bins=(100, 100), colx='ref_timing', coly='amp', range=None, offset=None, save_fig=False, fig_path=None, fn=None, tick_step = 1e-9):
         """
         TODO Write the docs
         """
         period = 1/np.median(self.df.rf_freq)
         vrange = np.abs(self.df.amp.min() - self.df.amp.max())
 
-        ref_timing = self.df.ref_timing
+        xdata = self.df[colx]
+        ydata = self.df[coly]
         
         if range != None:
 
@@ -49,14 +50,14 @@ class TsmPlotter():
             plt.xlim(range[0][0], range[0][1])
             plt.ylim(range[1][0], range[1][1])
         
-            plt.xlabel('Time Difference [ps]')
+            plt.xlabel(colx)
         
         else:
             binsx, binsy = bins
-            plt.xlabel('Time Difference [s]')
+            plt.xlabel(colx)
         
         cmap = plt.cm.viridis
-        H, xedges, yedges = np.histogram2d(ref_timing, self.df.amp, bins=[binsx, binsy])
+        H, xedges, yedges = np.histogram2d(xdata, ydata, bins=[binsx, binsy])
         
         X, Y = np.meshgrid(xedges, yedges)
 
@@ -73,7 +74,7 @@ class TsmPlotter():
         
        
         plt.colorbar()
-        plt.ylabel('Pulse Amplitude [V]')
+        plt.ylabel(coly)
 
         if save_fig:
             plt.savefig(os.path.join(fig_path, fn))
