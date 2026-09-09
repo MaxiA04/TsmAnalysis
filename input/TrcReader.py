@@ -26,18 +26,18 @@ class TraceReader:
         chn_rf: Channel number on the oscilloscope corresponding to the input of the RF
     """
 
-    def __init__(self, path_to_data: str, chn_pmt: int, chn_rf: int):
+    def __init__(self, path_to_data: str, chn_pmt: int, chn_rf: int, range=(None, None)):
         
         self.path_to_data = path_to_data
         self.chn_pmt, self.chn_rf = str(chn_pmt), str(chn_rf)
         
         traces_unordered_pmt = glob.glob(os.path.join(path_to_data, 'C'+self.chn_pmt+'*.trc'))        
         traces_unordered_pmt.sort()
-        self.traces_pmt = traces_unordered_pmt
+        self.traces_pmt = traces_unordered_pmt[range[0]:range[1]]
 
         traces_unordered_rf = glob.glob(os.path.join(path_to_data, 'C'+self.chn_rf+'*.trc'))        
         traces_unordered_rf.sort()
-        self.traces_rf = traces_unordered_rf
+        self.traces_rf = traces_unordered_rf[range[0]:range[1]]
 
     def load_traces(self):
 
@@ -71,8 +71,8 @@ class TraceReader:
 
             print('Fetching Traces from %s' % os.path.join(parent_dir,fn))
             traces = pd.read_json(file_path)
-            df_pmt = pd.DataFrame({'time': traces['time'], 'trigger_timing': pd.to_datetime(traces['trigger_timing'], unit="us"), 'voltage': traces['pmt']})
-            df_rf = pd.DataFrame({'voltage': traces['rf']})
+            df_pmt = pd.DataFrame({'trc_index': traces['trc_index_pmt'], 'trigger_timing': pd.to_datetime(traces['trigger_timing_pmt'], unit="us"), 'time': traces['time'], 'voltage': traces['pmt']})
+            df_rf = pd.DataFrame({ 'trc_index': traces['trc_index_rf'], 'trigger_timing': pd.to_datetime(traces['trigger_timing_rf'], unit="us"), 'voltage': traces['rf']})
 
             _info = open(info_path) 
             info = json.load(_info)
@@ -83,10 +83,12 @@ class TraceReader:
             print('Collecting traces from %s' % self.path_to_data )
             # Initialize DataFrames
 
-            df_pmt = pd.DataFrame(columns = ['index', 'time', 'voltage', 'trigger_timing'])
-            df_rf = pd.DataFrame(columns = ['index', 'voltage'])
+            df_pmt = pd.DataFrame(columns = ['index', 'trc_index', 'time', 'voltage', 'trigger_timing'])
+            df_rf = pd.DataFrame(columns = ['index', 'trc_index', 'voltage'])
 
             # Fill it with all the traces
+
+            output_limiter = 0
 
             for i in tqdm(range(len(self.traces_pmt))):  
                 
@@ -97,26 +99,34 @@ class TraceReader:
                 timing = info['TRIGGER_TIME']
 
                 df_pmt = pd.concat([df_pmt, pd.DataFrame(data={'time': [list(time)],
-                                                        'voltage': [list(voltage)], 'trigger_timing': timing})])
+                                                        'voltage': [list(voltage)], 'trigger_timing': timing, 'trc_index': int(pmt_trc)}) ])
+
+            for i in tqdm(range(len(self.traces_rf))):
 
                 rf_trc = os.path.split(self.traces_rf[i])[1][-9:-4] # Fetch trace index rf
-                _time, voltage, _info = loader.open(self.traces_rf[i])
-                df_rf = pd.concat([df_rf, pd.DataFrame(data={'voltage': [list(voltage)]})])
+                _time, voltage, info = loader.open(self.traces_rf[i])
+                timing = info['TRIGGER_TIME']
+                df_rf = pd.concat([df_rf, pd.DataFrame(data={'voltage': [list(voltage)], 'trigger_timing': timing, 'trc_index': int(rf_trc)})])
 
                 # And check that both traces have matching indices
-
-                if pmt_trc != rf_trc:
-                    warnings.warn(f'Trace index in PMT channel {pmt_trc} does not match RF channel {rf_trc}')
+                
+                # if pmt_trc != rf_trc and output_limiter < 5:
+                #     warnings.warn(f'Trace index in PMT channel {pmt_trc} does not match RF channel {rf_trc}')
+                #     output_limiter += 1
+                # if output_limiter == 5:
+                #      warnings.warn(f'Output truncated. More mismatched instances are likely.')
 
         # Then save to file
         
             df_pmt.reset_index(drop=True, inplace=True)
             df_rf.reset_index(drop=True, inplace=True)
 
-            save_to_file = pd.DataFrame({'time': df_pmt['time'],
-            
+            save_to_file = pd.DataFrame({'time': df_pmt['time'],            
                                         'pmt': df_pmt['voltage'],
-                                        'trigger_timing': df_pmt['trigger_timing'],
+                                        'trc_index_pmt': df_pmt['trc_index'],
+                                        'trigger_timing_pmt': df_pmt['trigger_timing'],
+                                        'trc_index_rf': df_rf['trc_index'],
+                                        'trigger_timing_rf': df_rf['trigger_timing'],
                                         'rf': df_rf['voltage']})
 
             save_to_file.to_json(file_path, date_unit='us')

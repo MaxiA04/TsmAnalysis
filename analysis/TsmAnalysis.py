@@ -17,14 +17,15 @@ class TsmAnalysis:
     TODO Write the docs!
 
     Attributes:
-        compute:
-        rf_model:
-        falling_edge_model:
-        phase_to_time:
-        optimizer:
-        get_rf_timing:
-        chi_square_test:
-        CFD_correction:
+        compute:            Performs basic computations on input data adding fields [amp, area, min_loc, pulse_start] computing pmt pulse amplitude, 
+                            area, peak position and trigger position.
+        rf_model:           Model sine-wave for fitting the reference signal.
+        falling_edge_model: Linear model used to shape the pmts falling edge
+        phase_to_time:      Method to compute timing information from phase estimate of rf-fit.
+        optimizer:          wrapper for scipy.optimize function with default boundaries.
+        chi_square_test:    Goodnes-of-fit-test for the estimate rf fit parameters. (Should be very well constrained)
+        get_rf_timing:      Method to estimate pulse timing with respect to rf-signal. Calls rf_model(), phase_to_time(), optimizer(), chi_square_test()
+        CFD_correction:     Method to compute discriminator-walk-corrected pulse start. Calls falling_edge_model().
     """
 
     def __init__(self, df_pmt_out: pd.DataFrame, df_rf_out: pd.DataFrame, bsl_window=(0, 100)):
@@ -43,14 +44,14 @@ class TsmAnalysis:
             df_sig_in: Pandas DataFrame containing the traces of the PMT output pulses in the column 'voltage'.
             df_ref_in: Pandas DataFrame containing the traces of the Accelerator cavity reference signal in the column 'voltage'.
         """
-
+        merged = pd.merge(df_sig_in, df_ref_in, on='trigger_timing', how='inner', )
         df = pd.DataFrame()
         # Trace and trigger timing information
-        df['time'] = df_sig_in['time']
-        df['trigger_timing'] = df_sig_in['trigger_timing']
+        df['time'] = merged['time']
+        df['trigger_timing'] = merged['trigger_timing']
 
         # PMT trace & calculations 
-        df['pmt'] = df_sig_in['voltage']
+        df['pmt'] = merged['voltage_x']
         df['amp'] = df['pmt'].apply(lambda v: np.min(v))
         df['area'] = df['pmt'].apply(lambda v: np.sum(-np.array(v)[bsl_window[1]:]) )
         df['min_loc'] = df['pmt'].apply(lambda v: np.where(v == np.min(v))[0][0])
@@ -64,7 +65,7 @@ class TsmAnalysis:
         df['pulse_start'] = pulse_start
 
         # RF Trace
-        df['ref'] = df_ref_in['voltage']
+        df['ref'] = merged['voltage_y']
 
         # Deprecated calculations
         # df['voltage'] = df_sig_in['voltage']
@@ -145,7 +146,7 @@ class TsmAnalysis:
         """
        
         if timing == 'corrected':
-                        
+                   
             if cfd_bounds[0] > cfd_bounds[1] or cfd_bounds[0] < 0 or cfd_bounds[1] > 1 or cfd_bounds[1] < 0 or cfd_bounds[1] > 1 :
                 cfd_bounds = (.1, .9)
                 warnings.warn('provided cfd_bounds (%f, %f) are invalid. Make sure both are in range (0,1) and the first boundary is lower than the second.' %cfd_bounds)
@@ -158,6 +159,9 @@ class TsmAnalysis:
         elif timing not in ['corrected', 'original']:
             warnings.warn(f'timing identifier %s not recognized. The computation defaults to scope-native timebase and is prone to discriminator walk.' %timing)
             timing_col = 'time'
+
+        else:
+            print('using scope native pulse timing. (Leading edge trigger)')
         
         print('Calculating pulse timing w.r.t. RF')
 
@@ -257,7 +261,7 @@ class TsmAnalysis:
         delay = []
         risetime = []
 
-        print('Estimating pulse arival times')
+        print('Estimating corrected pulse arival times')
         fail_counts = 0
         for i in tqdm(self.df.index):
 
@@ -273,11 +277,12 @@ class TsmAnalysis:
 
             amp = full_amp[mask]
             time = full_time[mask]
+
             try:
                 p0 = [(amp.min() - amp.max())/(time.max() - time.min()), -.5]
                 bounds = ([-np.inf, -np.inf],[0, np.inf])
 
-                popt, pcov, = curve_fit(self.falling_edge_model, time, amp, p0=p0, bounds=bounds)
+                popt, pcov, = curve_fit(self.falling_edge_model, time, amp, p0=p0, bounds=bounds) # TODO Add field to df with estimate uncertainty from fit for resolution estimate
                 pulse_delay_index = np.where(np.abs(self.falling_edge_model(full_time,*popt)) == np.min(np.abs(self.falling_edge_model(full_time,*popt))))[0][0]
                 pulse_delay = full_time[pulse_delay_index]
                 

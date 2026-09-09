@@ -25,6 +25,8 @@ class TsmPlotter():
     def tsm_hist2d(self, bins=(100, 100), colx='ref_timing', coly='amp', range=None, offset=None, save_fig=False, fig_path=None, fn=None, tick_step = 1e-9):
         """
         TODO Write the docs
+
+        offset: float in (0,1) to shift xaxis, in case distribution of interest sits at the edge of the RF-Period
         """
         period = 1/np.median(self.df.rf_freq)
         vrange = np.abs(self.df.amp.min() - self.df.amp.max())
