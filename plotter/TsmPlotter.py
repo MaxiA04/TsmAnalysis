@@ -33,6 +33,10 @@ class TsmPlotter():
 
         xdata = self.df[colx]
         ydata = self.df[coly]
+
+        mask = np.isfinite(xdata) & np.isfinite(ydata)
+        xdata = xdata[mask]
+        ydata = ydata[mask]
         
         if range != None:
 
