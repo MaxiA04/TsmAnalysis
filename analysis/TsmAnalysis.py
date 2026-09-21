@@ -44,14 +44,21 @@ class TsmAnalysis:
             df_sig_in: Pandas DataFrame containing the traces of the PMT output pulses in the column 'voltage'.
             df_ref_in: Pandas DataFrame containing the traces of the Accelerator cavity reference signal in the column 'voltage'.
         """
-        merged = pd.merge(df_sig_in, df_ref_in, on='trigger_timing', how='inner', )
+
+        # Merge sig_in and ref_in according to trigger_timing to ensure proper matching of events
+        # First make sure there are no invalid entries in trigger_timing columns then merge
+
+        df_sig_in['trigger_timing'] = pd.to_datetime(df_sig_in.trigger_timing, errors='coerce')
+        df_ref_in['trigger_timing'] = pd.to_datetime(df_ref_in.trigger_timing, errors='coerce')
+        merged = pd.merge(df_sig_in, df_ref_in, on='trigger_timing', how='inner', suffixes=('_pmt', '_rf'))
+
         df = pd.DataFrame()
         # Trace and trigger timing information
         df['time'] = merged['time']
         df['trigger_timing'] = merged['trigger_timing']
 
         # PMT trace & calculations 
-        df['pmt'] = merged['voltage_x']
+        df['pmt'] = merged['voltage_pmt']
         df['amp'] = df['pmt'].apply(lambda v: np.min(v))
         df['area'] = df['pmt'].apply(lambda v: np.sum(-np.array(v)[bsl_window[1]:]) )
         df['min_loc'] = df['pmt'].apply(lambda v: np.where(v == np.min(v))[0][0])
@@ -65,7 +72,7 @@ class TsmAnalysis:
         df['pulse_start'] = pulse_start
 
         # RF Trace
-        df['ref'] = merged['voltage_y']
+        df['ref'] = merged['voltage_rf']
 
         # Deprecated calculations
         # df['voltage'] = df_sig_in['voltage']
@@ -112,7 +119,67 @@ class TsmAnalysis:
             time -= period
 
         return time
-       
+
+    def slope_sign(self, x, y, index:int, sep:int = 10):
+        """
+        Simple method to determine the local behaviour of data surrounding a provided index, i.e. is the first derrivative at 
+        index positive or negative over a provided range sep.
+        
+        Arguments:
+            x: Array representing the x-coordinate of the data
+            y: Array representing the y-coordinate of the data
+            index: Location to be probed
+            sep: Distance in index used to calculate linear approx. of slope
+        Returns:
+            sign: -1, 1 according to the sign of the slope.
+        """
+        sign = 0
+
+        try:
+            slope = (y[index + sep] - y[index])/(x[index + sep] - x[index])
+        except:
+            slope = (y[index] - y[index - sep])/(x[index] - x[index - sep])
+
+        if slope < 0:
+            sign = -1
+        elif slope >= 0:
+            sign = 1
+        elif slope == 0:
+            warnings.warn("Slope unsigned. Something's fishy")
+
+        return sign
+
+    def phase_estimator(self, time, rf_trace, frequency=50632229.26542789):
+        """
+        Finds an initial estimate for the phase parameter of the sinusoidal RF signal, by finding the signal's last zero-crossing before
+        the trigger, and checking the sign of the slope at this location.
+        Arguments:
+                    time: Timebase used to compute separation with corresponding trigger located at the origin
+                    rf_trace: Single RF trace, for which the time separation is to be computed
+                    freq: Frequencty estimate of the RF.
+        returns:
+                    phase: Phase estimate in (-pi, pi) range
+        """
+        # Constrain values to 12 ns intervall centered at origin. In this way the maximum number of zero crossings is 2
+
+        mask = (time > -6e-9) & (time < 6e-9)
+
+        time_arr, ref_arr = time[mask], rf_trace[mask]
+
+        index_zero_xing = np.where(ref_arr**2 == np.min(ref_arr**2))[0][0] # Choose a zero crossing at random.
+
+        sign = self.slope_sign(time_arr, ref_arr, index=index_zero_xing)
+
+        rf_time_estimate = time_arr[index_zero_xing]
+
+        phase0 = -2*np.pi*rf_time_estimate*frequency
+
+        if sign < 0 and phase0 < 0:
+            phase0 += np.pi
+        elif sign < 0 and phase0 > 0:
+            phase0 -= np.pi
+            
+        return phase0
         
     def optimizer(self, model, time_arr, sig_arr, init_params=None,
                    bounds=None):
@@ -120,7 +187,7 @@ class TsmAnalysis:
         Wrapper for curve_fit plus GoF test
         """
         try:
-            popt, pcov = curve_fit(model, time_arr, sig_arr, p0=init_params, bounds=bounds)
+            popt, pcov = curve_fit(model, time_arr, sig_arr, p0=init_params, bounds=bounds, absolute_sigma=True)
             chi2, dof = self.chi_square_test(time_arr, sig_arr, popt)
             GoF = chi2/dof
         except:
@@ -147,10 +214,9 @@ class TsmAnalysis:
        
         if timing == 'corrected':
                    
-            if cfd_bounds[0] > cfd_bounds[1] or cfd_bounds[0] < 0 or cfd_bounds[1] > 1 or cfd_bounds[1] < 0 or cfd_bounds[1] > 1 :
+            if cfd_bounds[0] > cfd_bounds[1] or cfd_bounds[0] < 0 or cfd_bounds[1] > 1:
+                warnings.warn('provided cfd_bounds (%f, %f) are invalid. Make sure both are in range (0,1) and the first boundary is lower than the second. The default values will be used instead' %cfd_bounds)
                 cfd_bounds = (.1, .9)
-                warnings.warn('provided cfd_bounds (%f, %f) are invalid. Make sure both are in range (0,1) and the first boundary is lower than the second.' %cfd_bounds)
-            
             self.CFD_correction(lower=cfd_bounds[0], upper=cfd_bounds[1])            
             timing_col = 'CFD_corrected_time'
 
@@ -162,34 +228,39 @@ class TsmAnalysis:
 
         else:
             print('using scope native pulse timing. (Leading edge trigger)')
-        
+
         print('Calculating pulse timing w.r.t. RF')
 
         ref_t = []
+        ref_init_t = []
+
         gof = []
 
         rf_amp = []
         rf_freq = []
         rf_phase = []
+        rf_init_phase = []
         rf_bsl_shift = []
 
         fit_fail_counter = 0
 
-        init_params = [1.3, 0, 2*np.pi*50.6e6, 0]
-        bounds = ([1.26, -1e-2, 3.1e8, -np.inf], [1.3, 1e-2, 3.1825e8, np.inf])
-
+        
         for i in tqdm(self.df.index):
+
+            init_amp = 0.5*(np.max(self.df.ref[i] + np.abs(np.min(self.df.ref[i]))))
+
             
+
             time_arr = np.array(self.df[timing_col][i])
             ref_arr = np.array(self.df.ref[i])
 
-            mask = (time_arr > -1e-8) & (time_arr < 1e8) # Perfrom fit on 20ns window around origin
+            init_phase = self.phase_estimator(time_arr, ref_arr)
+
+            #  [A,B, w, phi]
+            init_params = [init_amp, 0, 2*np.pi*50.6e6, init_phase]
             
-            try:
-                time_arr = time_arr[mask]
-                ref_arr = ref_arr[mask]
+            try:              
                 
-                init_params = [1.3, 0, 2*np.pi*50.6e6, 0]
                 bounds = ([1.26, -1e-2, 3.1e8, -np.inf], [1.3, 1e-2, 3.1825e8, np.inf])
 
             
@@ -204,20 +275,26 @@ class TsmAnalysis:
                 amp, bsl_shift, freq, phase, GoF = np.nan, np.nan, np.nan, np.nan, np.nan
     
             dt = self.phase_to_time(phase, freq)
+            init_dt = self.phase_to_time(init_phase, freq=50632229.26542789)
 
             ref_t.append(dt)
+            ref_init_t.append(init_dt)
+
             gof.append(GoF)
             
             rf_amp.append(amp)
             rf_freq.append(freq)
             rf_phase.append(phase)
+            rf_init_phase.append(init_phase)
             rf_bsl_shift.append(bsl_shift)
 
         self.df['ref_timing'] = -1*np.array(ref_t)
-        
+        self.df['ref_init_timing'] = -1*np.array(ref_init_t)
+
         self.df['rf_amp'] = rf_amp
         self.df['rf_freq'] = rf_freq
         self.df['rf_phase'] = rf_phase
+        self.df['rf_init_phase'] = rf_init_phase
         self.df['rf_bsl_shift'] = rf_bsl_shift
 
         self.df['GoF'] = gof

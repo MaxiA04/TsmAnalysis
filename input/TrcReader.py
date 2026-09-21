@@ -27,6 +27,8 @@ class TraceReader:
     """
 
     def __init__(self, path_to_data: str, chn_pmt: int, chn_rf: int, range=(None, None)):
+
+        self.import_range = range
         
         self.path_to_data = path_to_data
         self.chn_pmt, self.chn_rf = str(chn_pmt), str(chn_rf)
@@ -69,8 +71,8 @@ class TraceReader:
 
             # if corresponding file is found, reads from json.
 
-            print('Fetching Traces from %s' % os.path.join(parent_dir,fn))
-            traces = pd.read_json(file_path)
+            print('Fetching Traces from %s' % fn)
+            traces = pd.read_json(file_path).iloc[self.import_range[0]: self.import_range[1]]
             df_pmt = pd.DataFrame({'trc_index': traces['trc_index_pmt'], 'trigger_timing': pd.to_datetime(traces['trigger_timing_pmt'], unit="us"), 'time': traces['time'], 'voltage': traces['pmt']})
             df_rf = pd.DataFrame({ 'trc_index': traces['trc_index_rf'], 'trigger_timing': pd.to_datetime(traces['trigger_timing_rf'], unit="us"), 'voltage': traces['rf']})
 
@@ -80,7 +82,7 @@ class TraceReader:
         else:
 
             # Else aggregate traces into dataframes:
-            print('Collecting traces from %s' % self.path_to_data )
+            print('Collecting traces from %s' % trace_dir )
             # Initialize DataFrames
 
             df_pmt = pd.DataFrame(columns = ['index', 'trc_index', 'time', 'voltage', 'trigger_timing'])
