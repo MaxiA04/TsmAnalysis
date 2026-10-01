@@ -50,7 +50,10 @@ class TraceReader:
             df_pmt: Pandas DataFrame containing the timebase, voltage, and trigger timing. columns: 'time', 'voltage', 'trigger_timing'
             df_rf : Pandas DataFrame containing the voltage information of the RF. columns: 'voltage'
         """
-
+      
+        if not os.path.isdir(self.path_to_data):
+             directory, measurement = os.path.split(self.path_to_data)
+             raise Exception('%s not found in %s' %(measurement, directory))
         
         # Set paths to search for previously loaded data and for saving first time data
 
@@ -110,14 +113,7 @@ class TraceReader:
                 timing = info['TRIGGER_TIME']
                 df_rf = pd.concat([df_rf, pd.DataFrame(data={'voltage': [list(voltage)], 'trigger_timing': timing, 'trc_index': int(rf_trc)})])
 
-                # And check that both traces have matching indices
                 
-                # if pmt_trc != rf_trc and output_limiter < 5:
-                #     warnings.warn(f'Trace index in PMT channel {pmt_trc} does not match RF channel {rf_trc}')
-                #     output_limiter += 1
-                # if output_limiter == 5:
-                #      warnings.warn(f'Output truncated. More mismatched instances are likely.')
-
         # Then save to file
         
             df_pmt.reset_index(drop=True, inplace=True)
