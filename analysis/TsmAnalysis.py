@@ -3,7 +3,7 @@ import numpy as np
 
 from tqdm import tqdm
 from scipy.optimize import curve_fit
-
+from scipy.stats import chi2
 import warnings
 
 
@@ -13,7 +13,7 @@ class TsmAnalysis:
 
     
     """
-    Class for processing data acquired with the time structure monitors at HIPA.
+    Processing data acquired with the time structure monitors at HIPA.
     TODO Write the docs!
 
     Attributes:
@@ -189,11 +189,13 @@ class TsmAnalysis:
         try:
             popt, pcov = curve_fit(model, time_arr, sig_arr, p0=init_params, bounds=bounds, absolute_sigma=True)
             chi2, dof = self.chi_square_test(time_arr, sig_arr, popt)
-            GoF = chi2/dof
+            reduced_chi2 = chi2/dof
+
         except:
             popt, pcov = np.nan, np.nan
-            GoF = np.nan
-        return popt, pcov, GoF
+            reduced_chi2 = np.nan
+
+        return popt, pcov, reduced_chi2
     
     def get_rf_timing(self, timing='corrected', cfd_bounds=(.1, .9)):
         """
@@ -234,8 +236,7 @@ class TsmAnalysis:
         ref_t = []
         ref_init_t = []
 
-        gof = []
-
+        rchi=[]
         rf_amp = []
         rf_freq = []
         rf_phase = []
@@ -264,7 +265,7 @@ class TsmAnalysis:
                 bounds = ([1.26, -1e-2, 3.1e8, -np.inf], [1.3, 1e-2, 3.1825e8, np.inf])
 
             
-                popt, pcov, GoF = self.optimizer(self.rf_model, time_arr, ref_arr,
+                popt, pcov, reduced_chi2 = self.optimizer(self.rf_model, time_arr, ref_arr,
                                                  init_params=init_params, bounds=bounds)
 
                 amp, bsl_shift, ang_freq, phase = popt
@@ -272,7 +273,7 @@ class TsmAnalysis:
                
             except:
                 fit_fail_counter += 1
-                amp, bsl_shift, freq, phase, GoF = np.nan, np.nan, np.nan, np.nan, np.nan
+                amp, bsl_shift, freq, phase, reduced_chi2= np.nan, np.nan, np.nan, np.nan, np.nan
     
             dt = self.phase_to_time(phase, freq)
             init_dt = self.phase_to_time(init_phase, freq=50632229.26542789)
@@ -280,7 +281,7 @@ class TsmAnalysis:
             ref_t.append(dt)
             ref_init_t.append(init_dt)
 
-            gof.append(GoF)
+            rchi.append(reduced_chi2)
             
             rf_amp.append(amp)
             rf_freq.append(freq)
@@ -297,8 +298,8 @@ class TsmAnalysis:
         self.df['rf_init_phase'] = rf_init_phase
         self.df['rf_bsl_shift'] = rf_bsl_shift
 
-        self.df['GoF'] = gof
-        self.df['fit_misalignment'] = self.df.apply(lambda v: self.phase_to_time(v.GoF, v.rf_freq), axis=1)
+        self.df['reduced_chi2'] = rchi
+        self.df['fit_misalignment'] = self.df.apply(lambda v: self.phase_to_time(v.reduced_chi2, v.rf_freq), axis=1)
 
         print('No estimate preduced in %i instances' % fit_fail_counter)
         
@@ -314,11 +315,15 @@ class TsmAnalysis:
             popt: best fit parameters estimated in optimizer method
         Returns:
             chi_square: Numpy Float64 - Chi square of the model estimated with sigma_i = 1
-            dof:  Integer - Number of degrees of freedom of the model.
+            dof: degrees of freedom associated to fit
+            p: p-value estimate corresponding to fit.
         """
-        residuals = y - self.rf_model(x, *popt)
-        chi_square = np.sum(residuals ** 2)
+
+        vertical_resolution = 8/2**12 # 8V dynamic range and 12-bit resolution
+        chi_square = np.sum(y - self.rf_model(x, *popt))/vertical_resolution**2
+        
         dof = len(y) - len(popt)
+
         return chi_square, dof
 
     def CFD_correction(self, lower=.1, upper=.9):
