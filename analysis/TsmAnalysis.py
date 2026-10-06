@@ -53,8 +53,9 @@ class TsmAnalysis:
         merged = pd.merge(df_sig_in, df_ref_in, on='trigger_timing', how='inner', suffixes=('_pmt', '_rf'))
 
         df = pd.DataFrame()
+        
         # Trace and trigger timing information
-        df['time'] = merged['time']
+        df['time'] = merged['time_pmt']
         df['trigger_timing'] = merged['trigger_timing']
 
         # PMT trace & calculations 
