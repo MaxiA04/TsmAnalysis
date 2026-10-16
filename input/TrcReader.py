@@ -32,7 +32,7 @@ class TraceReader:
         
         self.path_to_data = path_to_data
         
-    def load_traces(self, chn: int = -1,  save_json: bool = True, save_info: bool = True):
+    def load_traces(self, chn: int = -1,  save_json: bool = True):
 
         """
         Method to load recorded traces from teledyne format to dataframe and save to json.
@@ -52,17 +52,20 @@ class TraceReader:
         
         # Set paths to search for previously loaded data and for saving first time data
         # 
-        # parent_dir
-        # |--data (path_to_data)
-        # |  |--C*00000.trc
-        # |  ...
-        # |  |--C*NNNNN.trc
-        # |--data.json
+        #   parent_dir
+        #   |--data (path_to_data)
+        #   |  |--C*00000.trc
+        #   |  |--C*00001.trc
+        #   |  | .
+        #   |  | .
+        #   |  | .
+        #   |  |--C*NNNNN.trc
+        #   |--data.json
 
         parent_dir_file_content = next(os.walk(self.path_to_data+'/..'))[2] # dir content of parent dir to list
         parent_dir, trace_dir = os.path.split(self.path_to_data)
 
-        fn = trace_dir+f'C{chn}.json'
+        fn = trace_dir+f'_C{chn}.json'
         fn_info = trace_dir+'_DAQInfo.json'
 
         file_path = os.path.join(parent_dir, fn)
@@ -84,7 +87,10 @@ class TraceReader:
             print('Fetching Traces from %s' % fn)
             traces = pd.read_json(file_path).iloc[self.import_range[0]: self.import_range[1]]
             df = pd.DataFrame({'trc_index': traces['trc_index'], 'trigger_timing': pd.to_datetime(traces['trigger_timing'], unit="us"), 'time': traces['time'], 'voltage': traces['voltage']})
-
+            
+            df['time'] = df.time.apply(lambda v: np.array(v))   
+            df['voltage'] = df.voltage.apply(lambda v: np.array(v))
+            
             _info = open(info_path) 
             info = json.load(_info)
 
@@ -106,11 +112,14 @@ class TraceReader:
                 
                 timing = info['TRIGGER_TIME']
 
-                df = pd.concat([df, pd.DataFrame(data={'time': [list(time)],
-                                                        'voltage': [list(voltage)],
+                df = pd.concat([df, pd.DataFrame(data={'time': [np.array(time)],
+                                                        'voltage': [np.array(voltage)],
                                                         'trigger_timing': timing,
                                                         'trc_index': int(trc)})])
-                         
+                
+            df['time'] = df.time.apply(lambda v: np.array(v))   
+            df['voltage'] = df.voltage.apply(lambda v: np.array(v))
+
         # Then save to file
 
             if save_json:
@@ -125,7 +134,7 @@ class TraceReader:
 
                 # Separate file with scope information 
 
-            if save_info:
+        
                 info["TRIGGER_TIME"] = info['TRIGGER_TIME'].isoformat() # Prevents serialization from transforming datetime object to unix timestamp.
 
                 with open(info_path, 'w') as file:
@@ -133,3 +142,15 @@ class TraceReader:
 
         return df, info
 
+
+def readTDC_histogram(self, TDCdir):
+
+    path = os.path.join(self.path_to_data,TDCdir)
+    
+    df = pd.read_csv(path,
+                    sep=";",
+                    comment="#",       
+                    header=None,
+                    names=["bins", "counts"],
+                    skipinitialspace=True)
+    return df
